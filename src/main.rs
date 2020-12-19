@@ -1,3 +1,5 @@
+mod camera;
+
 extern crate sdl2;
 
 use std::fmt::Write;
@@ -5,7 +7,7 @@ use std::time::Duration;
 use std::f64::consts::PI;
 
 use sdl2::event::{Event, EventType};
-use sdl2::keyboard::Keycode;
+use sdl2::keyboard::{Keycode, Scancode, KeyboardState};
 use sdl2::gfx::primitives::DrawRenderer;
 use sdl2::render::{Canvas, RenderTarget};
 use sdl2::video::SwapInterval;
@@ -14,8 +16,9 @@ use sdl2::pixels::{self, Color, PixelFormat, PixelFormatEnum};
 
 use cairo::{ImageSurface, Context};
 use glam::Vec4;
+use crate::camera::Camera;
 
-const SCREEN_SIZE: (u32, u32) = (1280, 720);
+const SCREEN_SIZE: (u32, u32) = (640, 640);
 
 mod colors {
     use sdl2::pixels::Color;
@@ -27,7 +30,7 @@ const CLEAR_COLOR: pixels::Color = pixels::Color::RGB(0, 64, 148);
 fn main() -> Result<(), String> {
     let cube = vec![
         vec3(-0.5, -0.5, -0.5), vec3(0.5, -0.5, -0.5), vec3(0.5, -0.5, 0.5), vec3(-0.5, -0.5, 0.5),
-        vec3(-0.5, 0.5, -0.5), vec3(0.5, 0.5, -0.5), vec3(0.5, 0.5, 0.5), vec3(-0.5, 0.5, 0.5)
+        vec3(-0.5, 0.5, -0.5), vec3(0.5, 0.5, -0.5), vec3(0.5, 0.5, 0.5), vec3(-0.5, 0.5, 0.5),
     ];
 
     let font = cairo::FontFace::toy_create("Menlo", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
@@ -41,7 +44,7 @@ fn main() -> Result<(), String> {
 
     let window = video_subsys
         .window(
-            "Software Renderer 0.0.1",
+            "Bare Metal Software Renderer 0.0.1",
             SCREEN_SIZE.0,
             SCREEN_SIZE.1,
         )
@@ -66,6 +69,8 @@ fn main() -> Result<(), String> {
     let mut time = start.clone();
     let mut fps_str = String::with_capacity(16);
 
+    let mut camera = Camera::new(vec3i(0, 0, 8), vec3i(0, 0, 0));
+
     'main: loop {
         for event in events.poll_iter() {
             println!("{:?}", event);
@@ -78,6 +83,8 @@ fn main() -> Result<(), String> {
         let mouse = events.mouse_state();
         let m_pos = (mouse.x(), mouse.y());
 
+        let kb = events.keyboard_state();
+
         let now = std::time::Instant::now();
         let dt = (now - time).as_secs_f32();
         let elapsed = (now - start).as_secs_f32();
@@ -89,15 +96,19 @@ fn main() -> Result<(), String> {
             write!(fps_str, "{}ms ({:.1} fps)", frame_time, 1.0 / dt);
         }
 
+        // Camera control
+        update_camera(&mut camera, &kb, dt);
+
         let rot = 1.0 * elapsed;
 
         let m = glam::Mat4::from_scale_rotation_translation(
             glam::Vec3::one() * 4.0,
-            glam::Quat::from_axis_angle(vec3(0.0, 1.0, 0.0).normalize(),rot),
+            glam::Quat::from_rotation_ypr(rot, 0.0, 0.0),
             glam::Vec3::new(0., 0., 0.)
         );
-        let v = glam::Mat4::look_at_rh(vec3i(0, 5, -8), glam::Vec3::zero(), glam::Vec3::unit_y());
-        let p = glam::Mat4::perspective_rh(70.0f32.to_radians(), 16.0 / 9.0, 0.1, 100.0);
+
+        let v = camera.view_matrix();
+        let p = glam::Mat4::perspective_rh(45.0f32.to_radians(), SCREEN_SIZE.0 as f32 / SCREEN_SIZE.1 as f32, 0.1, 100.0);
 
         let pvm = p * v * m;
 
@@ -121,7 +132,13 @@ fn main() -> Result<(), String> {
         let mut prev: Option<(f64, f64)> = None;
         for edge in cube.iter() {
             // Transform to NDC (with perspective division)
-            let ndc = pvm.transform_point3(*edge);
+            let ndc = pvm * glam::Vec4::new(edge.x, edge.y, edge.z, 1.0);
+            let ndc = ndc / ndc.w;
+            // println!("{:?}", ndc);
+
+            if ndc.z > 1.0 {
+                continue;
+            }
 
             // Convert to screen coordinates
             let x = ((ndc.x + 1.0) * 0.5 * SCREEN_SIZE.0 as f32) as f64;
@@ -156,6 +173,56 @@ fn main() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[inline]
+fn update_camera(camera: &mut Camera, kb: &KeyboardState, dt: f32) {
+    // Translation
+    if kb.is_scancode_pressed(Scancode::A) {
+        camera.translate(-glam::Vec3::unit_x() * 2.0 * dt);
+    }
+    if kb.is_scancode_pressed(Scancode::D) {
+        camera.translate(glam::Vec3::unit_x() * 2.0 * dt);
+    }
+    if kb.is_scancode_pressed(Scancode::W) {
+        camera.translate(-glam::Vec3::unit_z() * 2.0 * dt);
+    }
+    if kb.is_scancode_pressed(Scancode::S) {
+        camera.translate(glam::Vec3::unit_z() * 2.0 * dt);
+    }
+    if kb.is_scancode_pressed(Scancode::LShift) {
+        camera.translate(glam::Vec3::unit_y() * 2.0 * dt);
+    }
+    if kb.is_scancode_pressed(Scancode::LCtrl) {
+        camera.translate(-glam::Vec3::unit_y() * 2.0 * dt);
+    }
+
+    // Rotation
+    if kb.is_scancode_pressed(Scancode::Left) {
+        camera.yaw(dt);
+    }
+    if kb.is_scancode_pressed(Scancode::Right) {
+        camera.yaw(-dt);
+    }
+    if kb.is_scancode_pressed(Scancode::Up) {
+        camera.pitch(dt);
+    }
+    if kb.is_scancode_pressed(Scancode::Down) {
+        camera.pitch(-dt);
+    }
+}
+
+fn mat4_look_at(eye: glam::Vec3, center: glam::Vec3, up: glam::Vec3) -> glam::Mat4 {
+    let z = (eye - center).normalize();
+    let x = up.cross(z).normalize();
+    let y = z.cross(x);
+
+    glam::Mat4::from_cols(
+        x.extend(0.0),
+        y.extend(0.0),
+        z.extend(0.0),
+        eye.extend(1.0)
+    )
 }
 
 fn vec3<T: Into<f32>>(x: T, y: T, z: T) -> glam::Vec3 {

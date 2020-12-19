@@ -9,4 +9,4 @@ edition = "2018"
 sdl2 = { verssion = "0.34.3" , features = ["gfx", "ttf"] }
 cairo-rs = "0.9.1"
 lazy_static = "1.4.0"
-glam = { version = "0.11.2", features = ["scalar-math", "std"] }
+glam = { version = "0.11.2"}
