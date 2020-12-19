@@ -8,7 +8,7 @@ Eventually, SDL2 and Cairo will be removed, as we will directly access the frame
 Steps:
 - [x] Draw to SDL2 texture
 - [x] Implement 3D transformation Pipeline, perspective projection
-- []  Triangle rasterization using edge functions
-- []  Shader programs
-- []  Port to `no-std`
-- []  Remove SDL2, Cairo, draw to frame buffer directly
+- [ ]  Triangle rasterization using edge functions
+- [ ]  Shader programs
+- [ ]  Port to `no-std`
+- [ ]  Remove SDL2, Cairo, draw to frame buffer directly
