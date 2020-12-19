@@ -8,4 +8,5 @@ edition = "2018"
 [dependencies]
 sdl2 = { verssion = "0.34.3" , features = ["gfx", "ttf"] }
 cairo-rs = "0.9.1"
-rand = "0.7.3"
+lazy_static = "1.4.0"
+glam = { version = "0.11.2", features = ["scalar-math", "std"] }
