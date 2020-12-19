@@ -1,6 +1,8 @@
 mod camera;
+mod mesh;
 
-extern crate sdl2;
+use crate::camera::Camera;
+use crate::mesh::Mesh;
 
 use std::fmt::Write;
 use std::time::Duration;
@@ -14,52 +16,60 @@ use sdl2::video::SwapInterval;
 use sdl2::rect::Rect;
 use sdl2::pixels::{self, Color, PixelFormat, PixelFormatEnum};
 
-use cairo::{ImageSurface, Context};
-use glam::Vec4;
-use crate::camera::Camera;
-
-const SCREEN_SIZE: (u32, u32) = (640, 640);
-
-mod colors {
-    use sdl2::pixels::Color;
-
-    pub const WHITE: Color = Color::RGB(255, 255, 255);
-}
+const SCREEN_SIZE: (u32, u32) = (1280, 720);
 const CLEAR_COLOR: pixels::Color = pixels::Color::RGB(0, 64, 148);
 
 fn main() -> Result<(), String> {
-    let cube = vec![
-        vec3(-0.5, -0.5, -0.5), vec3(0.5, -0.5, -0.5), vec3(0.5, -0.5, 0.5), vec3(-0.5, -0.5, 0.5),
-        vec3(-0.5, 0.5, -0.5), vec3(0.5, 0.5, -0.5), vec3(0.5, 0.5, 0.5), vec3(-0.5, 0.5, 0.5),
-    ];
+    let mesh = Mesh::new(
+        vec![
+            vec3(-0.5, -0.5, -0.5),
+            vec3(0.5, -0.5, -0.5),
+            vec3(0.5, -0.5, 0.5),
+            vec3(-0.5, -0.5, 0.5),
+            vec3(-0.5, 0.5, -0.5),
+            vec3(0.5, 0.5, -0.5),
+            vec3(0.5, 0.5, 0.5),
+            vec3(-0.5, 0.5, 0.5)
+        ], vec![]);
 
-    let font = cairo::FontFace::toy_create("Menlo", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
-    let mut surface = ImageSurface::create(cairo::Format::ARgb32, SCREEN_SIZE.0 as i32, SCREEN_SIZE.1 as i32)
-        .expect("couldn’t create a surface, yo");
+    let font = cairo::FontFace::toy_create(
+        "Menlo",
+        cairo::FontSlant::Normal,
+        cairo::FontWeight::Normal
+    );
 
-    let cairo = Context::new(&surface);
+    let mut surface = cairo::ImageSurface::create(
+        cairo::Format::ARgb32,
+        SCREEN_SIZE.0 as i32,
+        SCREEN_SIZE.1 as i32
+    ).expect("couldn’t create a surface, yo");
+
+    let cairo = cairo::Context::new(&surface);
 
     let sdl_context = sdl2::init()?;
     let video_subsys = sdl_context.video()?;
 
     let window = video_subsys
-        .window(
-            "Bare Metal Software Renderer 0.0.1",
-            SCREEN_SIZE.0,
-            SCREEN_SIZE.1,
-        )
+        .window("Bare Metal Software Renderer 0.0.1",
+                SCREEN_SIZE.0,
+                SCREEN_SIZE.1)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut canvas = window.into_canvas().present_vsync().build().map_err(|e| e.to_string())?;
+    let mut canvas = window.into_canvas()
+        .present_vsync()
+        .build()
+        .map_err(|e| e.to_string())?;
 
+    // Setup event pump, disable some events
     let mut events = sdl_context.event_pump()?;
     events.disable_event(EventType::MouseMotion);
     events.disable_event(EventType::KeyDown);
     events.disable_event(EventType::KeyUp);
     events.disable_event(EventType::TextInput);
 
+    // Create texture to draw to using cairo surface
     let creator = canvas.texture_creator();
     let mut texture = creator
         .create_texture_streaming(PixelFormatEnum::ARGB8888, SCREEN_SIZE.0, SCREEN_SIZE.1)
@@ -72,6 +82,7 @@ fn main() -> Result<(), String> {
     let mut camera = Camera::new(vec3i(0, 0, 8), vec3i(0, 0, 0));
 
     'main: loop {
+        // Poll event loop
         for event in events.poll_iter() {
             println!("{:?}", event);
             match event {
@@ -80,11 +91,13 @@ fn main() -> Result<(), String> {
             }
         };
 
+        // Get keyboard and mouse state
         let mouse = events.mouse_state();
-        let m_pos = (mouse.x(), mouse.y());
-
         let kb = events.keyboard_state();
 
+        let mouse_pos = (mouse.x(), mouse.y());
+
+        // Figure out frame timing
         let now = std::time::Instant::now();
         let dt = (now - time).as_secs_f32();
         let elapsed = (now - start).as_secs_f32();
@@ -101,6 +114,7 @@ fn main() -> Result<(), String> {
 
         let rot = 1.0 * elapsed;
 
+        // Compute transformation matrix
         let m = glam::Mat4::from_scale_rotation_translation(
             glam::Vec3::one() * 4.0,
             glam::Quat::from_rotation_ypr(rot, 0.0, 0.0),
@@ -108,20 +122,29 @@ fn main() -> Result<(), String> {
         );
 
         let v = camera.view_matrix();
-        let p = glam::Mat4::perspective_rh(45.0f32.to_radians(), SCREEN_SIZE.0 as f32 / SCREEN_SIZE.1 as f32, 0.1, 100.0);
+        let p = glam::Mat4::perspective_rh(
+            45.0f32.to_radians(),
+            SCREEN_SIZE.0 as f32 / SCREEN_SIZE.1 as f32,
+            0.1, 100.0
+        );
 
         let pvm = p * v * m;
 
+        // Clear texture
         cairo.set_source_rgb(0.0, 0.3, 0.6);
         cairo.paint();
+
+        // Draw mouse "pointer"
         {
             let lw = cairo.get_line_width();
             cairo.set_line_width(4.0);
             cairo.set_source_rgb(1.0, 0.7, 0.0);
-            cairo.arc(m_pos.0 as f64, m_pos.1 as f64, 20., 0., 2. * PI);
+            cairo.arc(mouse_pos.0 as f64, mouse_pos.1 as f64, 20., 0., 2. * PI);
             cairo.stroke();
             cairo.set_line_width(lw);
         }
+
+        // Draw fps text
         cairo.set_font_size(20.0);
         cairo.set_font_face(&font);
         cairo.move_to(10.0, 30.0);
@@ -129,34 +152,9 @@ fn main() -> Result<(), String> {
         cairo.stroke();
 
         // Draw cube
-        let mut prev: Option<(f64, f64)> = None;
-        for edge in cube.iter() {
-            // Transform to NDC (with perspective division)
-            let ndc = pvm * glam::Vec4::new(edge.x, edge.y, edge.z, 1.0);
-            let ndc = ndc / ndc.w;
-            // println!("{:?}", ndc);
+        mesh.draw(&pvm, &cairo, SCREEN_SIZE);
 
-            if ndc.z > 1.0 {
-                continue;
-            }
-
-            // Convert to screen coordinates
-            let x = ((ndc.x + 1.0) * 0.5 * SCREEN_SIZE.0 as f32) as f64;
-            let y = ((1.0 - ((ndc.y + 1.0) * 0.5)) * SCREEN_SIZE.1 as f32) as f64;
-
-            cairo.rectangle(x - 4.0, y - 4.0, 8.0, 8.0);
-            cairo.fill();
-
-            cairo.move_to(x, y);
-
-            if let Some((px, py)) = prev {
-                cairo.line_to(px, py);
-                cairo.stroke();
-            }
-
-            prev = Some((x, y))
-        }
-
+        // TODO: (Perf) Possible to directly copy Cairo buffer to frame buffer, bypassing texture?
         // Copy cairo buffer to SDL texture
         texture.with_lock(None, |tex: &mut [u8], pitch: usize| {
             surface.with_data(|surf: &[u8]| {
@@ -165,10 +163,10 @@ fn main() -> Result<(), String> {
         })?;
 
         // Copy SDL texture to frame buffer
-        // TODO: Possible to directly copy Cairo buffer to frame buffer?
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
 
+        // Since we are polling the event cube, yield some time to free up CPU
         std::thread::sleep(Duration::from_millis(10));
     }
 
