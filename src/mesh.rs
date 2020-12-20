@@ -21,11 +21,8 @@ impl Mesh {
         }
     }
 
-    pub fn draw(&self, mvp: &glam::Mat4, cairo: &cairo::Context, vp: &Viewport) {
+    pub fn draw(&self, mvp: &glam::Mat4, canvas: &mut sdl2::render::WindowCanvas, vp: &Viewport) {
         let t = vp.mat * *mvp;
-
-        // Draw vertices
-        cairo.set_source_rgb(1.0, 0.7, 0.0);
 
         for vertex in (&self.vertices).iter() {
             // Transform vertices, perform perspective division
@@ -42,9 +39,7 @@ impl Mesh {
             // let y = ((1.0 - ((ndc.y + 1.0) * 0.5)) * screen.1 as f32) as f64;
             let (x, y) = (ndc.x as f32, ndc.y as f32);
 
-            // Draw vertex as square
-            cairo.rectangle(x as f64 - 4.0, y as f64 - 4.0, 8.0, 8.0);
-            cairo.fill();
+            // TODO: Do something with vertices
         }
 
         // Rasterize triangles
@@ -69,6 +64,31 @@ impl Mesh {
             let v1 = t * self.vertices[triangle_indices[1] as usize].extend(1.0);
             let v2 = t * self.vertices[triangle_indices[2] as usize].extend(1.0);
 
+            if v0.w < 0.0 && v1.w < 0.0 && v2.w < 0.0 {
+                // Triangle is behind camera, don't draw
+                continue;
+            }
+
+            // Compute AABB
+            let (x_min, x_max, y_min, y_max) = if v0.w > 0.0 && v1.w > 0.0 && v2.w > 0.0 {
+                use std::cmp::{min, max};
+
+                // Project and compute AABB
+                let v0 = v0 / v0.w;
+                let v1 = v1 / v1.w;
+                let v2 = v2 / v2.w;
+
+                let x_min = min(v0.x as u16, min(v1.x as u16, v2.x as u16));
+                let x_max = max(v0.x as u16, max(v1.x as u16, v2.x as u16));
+                let y_min = min(v0.y as u16, min(v1.y as u16, v2.y as u16));
+                let y_max = max(v0.y as u16, max(v1.y as u16, v2.y as u16));
+
+                (x_min, x_max, y_min, y_max)
+            } else {
+                // Use whole screen
+                (0u16, vp.dim.0, 0u16, vp.dim.1)
+            };
+
             let verts = glam::Mat3::from_cols(
                 glam::vec3(v0.x, v1.x, v2.x),
                 glam::vec3(v0.y, v1.y, v2.y),
@@ -88,13 +108,13 @@ impl Mesh {
             let (ay, by, cy) = (coeffs.z_axis.x, coeffs.z_axis.y, coeffs.z_axis.z);
 
             let color = self.colors[triangle_indices[0] as usize];
-            cairo.set_source_rgb(color.x as f64, color.y as f64, color.z as f64);
+            canvas.set_draw_color(sdl2::pixels::Color::RGB((color.x * 255.0) as u8, (color.y * 255.0) as u8, (color.z * 255.0) as u8));
 
             // Check whole screen
-            // TODO: Implement AABB optimization (only test pixels within AABB of triangle)
             // TODO: Parallelize, store result, write at the end
-            for y in 0..vp.dim.1 {
-                for x in 0..vp.dim.0 {
+            let mut points: Vec<sdl2::rect::Point> = Vec::with_capacity(2048usize);
+            for y in y_min..=y_max {
+                for x in x_min..=x_max {
                     let (x, y) = (x as f32, y as f32);
 
                     let aw = aa * x + ba * y + ca;
@@ -103,11 +123,11 @@ impl Mesh {
 
                     if aw > 0.0 && bw > 0.0 && cw > 0.0 {
                         // Point is inside triangle, draw
-                        cairo.rectangle(x as f64, y as f64, 1.5, 1.5);
+                        points.push(sdl2::rect::Point::new(x as i32, y as i32));
                     }
                 }
             }
-            cairo.fill();
+            canvas.draw_points(points.as_slice());
         }
     }
 }

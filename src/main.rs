@@ -145,9 +145,6 @@ fn main() -> Result<(), String> {
         cairo.set_source_rgb(0.0, 0.3, 0.6);
         cairo.paint();
 
-        // Draw cube
-        mesh.draw(&pvm, &cairo, &viewport);
-
         // Draw mouse "pointer"
         {
             let lw = cairo.get_line_width();
@@ -175,10 +172,15 @@ fn main() -> Result<(), String> {
 
         // Copy SDL texture to frame buffer
         canvas.copy(&texture, None, None).unwrap();
+
+        // Draw cube
+        mesh.draw(&pvm, &mut canvas, &viewport);
+
         canvas.present();
+        clear_canvas(&mut canvas, CLEAR_COLOR);
 
         // Since we are polling the event cube, yield some time to free up CPU
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(4));
     }
 
     Ok(())
