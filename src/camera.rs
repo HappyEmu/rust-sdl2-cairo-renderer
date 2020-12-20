@@ -16,13 +16,24 @@ impl Camera {
         let m = glam::Mat4::look_at_rh(pos, look_at, glam::Vec3::unit_y()).inverse();
 
         let (_, rot, _) = m.to_scale_rotation_translation();
-        let (yaw, pit, _) = quat_to_euler(&rot);
+        let (yaw, pit, rol) = quat_to_euler(&rot);
 
         Self {
             pos,
             rot,
+            yaw: -pit,
+            pit: -(rol + consts::PI)
+        }
+    }
+
+    pub fn from_ypr(pos: glam::Vec3, yaw: f32, pitch: f32, roll: f32) -> Self {
+        let q = glam::Quat::from_rotation_ypr(yaw, pitch, roll);
+
+        Self {
+            pos,
+            rot: q,
             yaw,
-            pit
+            pit: pitch
         }
     }
 }
@@ -30,12 +41,19 @@ impl Camera {
 impl Camera {
     pub fn yaw(&mut self, d_yaw: f32) {
         self.yaw += d_yaw;
+
         let q = glam::Quat::from_rotation_ypr(self.yaw, self.pit, 0.0);
         self.rot = q;
     }
 
+    const ANGLE_CLAMP: f32 = consts::FRAC_PI_2 - 0.1;
     pub fn pitch(&mut self, d_pit: f32) {
         self.pit += d_pit;
+
+        // Prevent gimbal lock
+        if self.pit >= Self::ANGLE_CLAMP { self.pit = Self::ANGLE_CLAMP; }
+        if self.pit <= -Self::ANGLE_CLAMP { self.pit = -Self::ANGLE_CLAMP; }
+
         let q = glam::Quat::from_rotation_ypr(self.yaw, self.pit, 0.0);
         self.rot = q;
     }
@@ -57,10 +75,9 @@ impl Camera {
 fn quat_to_euler(quat: &glam::Quat) -> (f32, f32, f32) {
     let (x, y, z, w) = (quat.x, quat.y, quat.z, quat.w);
 
+    let yaw = (2.0 * (x*y + z*w)).atan2(1.0 - 2.0 * (y*y + z*z));
+    let pit = (2.0 * (x*z - w*y)).asin();
+    let rol = (2.0 * (x*w + y*z)).atan2(1.0 - 2.0 * (z*z + w*w));
 
-    let y = ((2.0 * (x * y + z * w)) / (1.0 - 2.0 * (y * y + z * z))).atan();
-    let p = (2.0 * (x * z - w * y)).asin();
-    let r = 0.0;
-
-    (y, p, r)
+    (yaw, pit, rol)
 }
