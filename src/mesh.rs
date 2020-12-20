@@ -24,24 +24,30 @@ impl Mesh {
     pub fn draw(&self, mvp: &glam::Mat4, canvas: &mut sdl2::render::WindowCanvas, vp: &Viewport) {
         let t = vp.mat * *mvp;
 
-        for vertex in (&self.vertices).iter() {
-            // Transform vertices, perform perspective division
-            let ndc = t * glam::Vec4::new(vertex.x, vertex.y, vertex.z, 1.0);
-            let ndc = ndc / ndc.w;
+        for triangle_indices in self.indices.chunks(3) {
+            let v0 = t * self.vertices[triangle_indices[0] as usize].extend(1.0);
+            let v1 = t * self.vertices[triangle_indices[1] as usize].extend(1.0);
+            let v2 = t * self.vertices[triangle_indices[2] as usize].extend(1.0);
 
-            // Cull vertices behind camera plane
-            if ndc.z > 1.0 {
-                continue;
+            let c = self.colors[triangle_indices[0] as usize];
+            canvas.set_draw_color(sdl2::pixels::Color::RGB(
+                (c.x * 255.0) as u8,
+                (c.y * 255.0) as u8,
+                (c.z * 255.0) as u8)
+            );
+
+            if let Some(points) = Self::rasterize_triangle(v0, v1, v2, vp) {
+                canvas.draw_points(points.as_slice());
             }
-
-            // Convert to screen coordinates
-            // let x = ((ndc.x + 1.0) * 0.5 * screen.0 as f32) as f64;
-            // let y = ((1.0 - ((ndc.y + 1.0) * 0.5)) * screen.1 as f32) as f64;
-            let (x, y) = (ndc.x as f32, ndc.y as f32);
-
-            // TODO: Do something with vertices
         }
+    }
 
+    fn rasterize_triangle(
+        v0: glam::Vec4,
+        v1: glam::Vec4,
+        v2: glam::Vec4,
+        vp: &Viewport
+    ) -> Option<Vec<sdl2::rect::Point>> {
         // Rasterize triangles
         //
         // Setup edge functions
@@ -59,75 +65,69 @@ impl Mesh {
         // [ aa ab ay ]   [ x0 y0 w0 ][-1]
         // [ ba bb by ] = [ x1 y1 w1 ]
         // [ ca cb cy ]   [ x2 y2 w2 ]
-        for triangle_indices in self.indices.chunks(3usize) {
-            let v0 = t * self.vertices[triangle_indices[0] as usize].extend(1.0);
-            let v1 = t * self.vertices[triangle_indices[1] as usize].extend(1.0);
-            let v2 = t * self.vertices[triangle_indices[2] as usize].extend(1.0);
 
-            if v0.w < 0.0 && v1.w < 0.0 && v2.w < 0.0 {
-                // Triangle is behind camera, don't draw
-                continue;
-            }
+        if v0.w < 0.0 && v1.w < 0.0 && v2.w < 0.0 {
+            // Triangle is behind camera, don't draw
+            return None;
+        }
 
-            // Compute AABB
-            let (x_min, x_max, y_min, y_max) = if v0.w > 0.0 && v1.w > 0.0 && v2.w > 0.0 {
-                use std::cmp::{min, max};
+        // Compute AABB of triangle
+        let (x_min, x_max, y_min, y_max) = if v0.w > 0.0 && v1.w > 0.0 && v2.w > 0.0 {
+            use std::cmp::{min, max};
 
-                // Project and compute AABB
-                let v0 = v0 / v0.w;
-                let v1 = v1 / v1.w;
-                let v2 = v2 / v2.w;
+            // Project and compute AABB
+            let v0 = v0 / v0.w;
+            let v1 = v1 / v1.w;
+            let v2 = v2 / v2.w;
 
-                let x_min = min(v0.x as u16, min(v1.x as u16, v2.x as u16));
-                let x_max = max(v0.x as u16, max(v1.x as u16, v2.x as u16));
-                let y_min = min(v0.y as u16, min(v1.y as u16, v2.y as u16));
-                let y_max = max(v0.y as u16, max(v1.y as u16, v2.y as u16));
+            let x_min = min(v0.x as u16, min(v1.x as u16, v2.x as u16));
+            let x_max = max(v0.x as u16, max(v1.x as u16, v2.x as u16));
+            let y_min = min(v0.y as u16, min(v1.y as u16, v2.y as u16));
+            let y_max = max(v0.y as u16, max(v1.y as u16, v2.y as u16));
 
-                (x_min, x_max, y_min, y_max)
-            } else {
-                // Use whole screen
-                (0u16, vp.dim.0, 0u16, vp.dim.1)
-            };
+            (x_min, x_max, y_min, y_max)
+        } else {
+            // Use whole viewport
+            (0u16, vp.dim.0, 0u16, vp.dim.1)
+        };
 
-            let verts = glam::Mat3::from_cols(
-                glam::vec3(v0.x, v1.x, v2.x),
-                glam::vec3(v0.y, v1.y, v2.y),
-                glam::vec3(v0.w, v1.w, v2.w)
-            );
+        // Setup barycentric coefficient matrix
+        let verts = glam::Mat3::from_cols(
+            glam::vec3(v0.x, v1.x, v2.x),
+            glam::vec3(v0.y, v1.y, v2.y),
+            glam::vec3(v0.w, v1.w, v2.w)
+        );
 
-            // det(verts) = 0 => triangle has zero area => don't draw
-            // det(verts) < 0 => back-facing triangle => don't draw
-            if verts.determinant() <= 0.0 {
-                continue;
-            }
+        // det(verts) = 0 => triangle has zero area => don't draw
+        // det(verts) < 0 => back-facing triangle => don't draw
+        if verts.determinant() <= 0.0 {
+            return None;
+        }
 
-            let coeffs = verts.inverse();
+        let coeffs = verts.inverse();
+        let (aa, ba, ca) = (coeffs.x_axis.x, coeffs.x_axis.y, coeffs.x_axis.z);
+        let (ab, bb, cb) = (coeffs.y_axis.x, coeffs.y_axis.y, coeffs.y_axis.z);
+        let (ay, by, cy) = (coeffs.z_axis.x, coeffs.z_axis.y, coeffs.z_axis.z);
 
-            let (aa, ba, ca) = (coeffs.x_axis.x, coeffs.x_axis.y, coeffs.x_axis.z);
-            let (ab, bb, cb) = (coeffs.y_axis.x, coeffs.y_axis.y, coeffs.y_axis.z);
-            let (ay, by, cy) = (coeffs.z_axis.x, coeffs.z_axis.y, coeffs.z_axis.z);
+        // Store points instead of directly drawing here, should be easier to parallelize
+        // since canvas is not thread safe.
+        let mut points: Vec<sdl2::rect::Point> = Vec::with_capacity(2048usize);
 
-            let color = self.colors[triangle_indices[0] as usize];
-            canvas.set_draw_color(sdl2::pixels::Color::RGB((color.x * 255.0) as u8, (color.y * 255.0) as u8, (color.z * 255.0) as u8));
+        for y in y_min..=y_max {
+            for x in x_min..=x_max {
+                let (x, y) = (x as f32, y as f32);
 
-            // Check whole screen
-            // TODO: Parallelize, store result, write at the end
-            let mut points: Vec<sdl2::rect::Point> = Vec::with_capacity(2048usize);
-            for y in y_min..=y_max {
-                for x in x_min..=x_max {
-                    let (x, y) = (x as f32, y as f32);
+                let aw = aa * x + ba * y + ca;
+                let bw = ab * x + bb * y + cb;
+                let cw = ay * x + by * y + cy;
 
-                    let aw = aa * x + ba * y + ca;
-                    let bw = ab * x + bb * y + cb;
-                    let cw = ay * x + by * y + cy;
-
-                    if aw > 0.0 && bw > 0.0 && cw > 0.0 {
-                        // Point is inside triangle, draw
-                        points.push(sdl2::rect::Point::new(x as i32, y as i32));
-                    }
+                if aw > 0.0 && bw > 0.0 && cw > 0.0 {
+                    // Point is inside triangle, draw
+                    points.push(sdl2::rect::Point::new(x as i32, y as i32));
                 }
             }
-            canvas.draw_points(points.as_slice());
         }
+
+        Some(points)
     }
 }

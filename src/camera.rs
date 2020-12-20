@@ -11,6 +11,8 @@ pub struct Camera {
 }
 
 impl Camera {
+    pub const SPEED: f32 = 2.0;
+
     pub fn new(pos: glam::Vec3, look_at: glam::Vec3) -> Self {
         // glam::look_at generates view matrix, not camera matrix -> inverse
         let m = glam::Mat4::look_at_rh(pos, look_at, glam::Vec3::unit_y()).inverse();

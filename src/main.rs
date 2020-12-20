@@ -41,10 +41,13 @@ fn main() -> Result<(), String> {
             0, 3, 2, 2, 1, 0
         ]);
 
-    let viewport = Viewport::new(SCREEN_SIZE.0 as u16, SCREEN_SIZE.1 as u16);
+    let viewport = Viewport::new(
+        SCREEN_SIZE.0 as u16,
+        SCREEN_SIZE.1 as u16
+    );
 
     let font = cairo::FontFace::toy_create(
-        "Menlo",
+        "Courier",
         cairo::FontSlant::Normal,
         cairo::FontWeight::Normal
     );
@@ -53,7 +56,7 @@ fn main() -> Result<(), String> {
         cairo::Format::ARgb32,
         SCREEN_SIZE.0 as i32,
         SCREEN_SIZE.1 as i32
-    ).expect("couldn’t create a surface, yo");
+    ).expect("Couldn't create a surface");
 
     let cairo = cairo::Context::new(&surface);
 
@@ -90,12 +93,14 @@ fn main() -> Result<(), String> {
     let mut time = start.clone();
     let mut fps_str = String::with_capacity(16);
 
-    let mut camera = Camera::new(vec3i(0, 5, 8), vec3i(0, 0, 0));
+    let mut camera = Camera::new(
+        vec3i(0, 5, 8),
+        vec3i(0, 0, 0)
+    );
 
     'main: loop {
         // Poll event loop
         for event in events.poll_iter() {
-            println!("{:?}", event);
             match event {
                 Event::Quit { .. } => break 'main,
                 _ => {}
@@ -124,7 +129,6 @@ fn main() -> Result<(), String> {
         update_camera(&mut camera, &kb, dt);
 
         let rot = 1.0 * elapsed;
-
         // Compute transformation matrix
         let m = glam::Mat4::from_scale_rotation_translation(
             glam::Vec3::one() * 2.0,
@@ -190,22 +194,22 @@ fn main() -> Result<(), String> {
 fn update_camera(camera: &mut Camera, kb: &KeyboardState, dt: f32) {
     // Translation
     if kb.is_scancode_pressed(Scancode::A) {
-        camera.translate(-glam::Vec3::unit_x() * 2.0 * dt);
+        camera.translate(-glam::Vec3::unit_x() * Camera::SPEED * dt);
     }
     if kb.is_scancode_pressed(Scancode::D) {
-        camera.translate(glam::Vec3::unit_x() * 2.0 * dt);
+        camera.translate(glam::Vec3::unit_x() * Camera::SPEED * dt);
     }
     if kb.is_scancode_pressed(Scancode::W) {
-        camera.translate(-glam::Vec3::unit_z() * 2.0 * dt);
+        camera.translate(-glam::Vec3::unit_z() * Camera::SPEED * dt);
     }
     if kb.is_scancode_pressed(Scancode::S) {
-        camera.translate(glam::Vec3::unit_z() * 2.0 * dt);
+        camera.translate(glam::Vec3::unit_z() * Camera::SPEED * dt);
     }
     if kb.is_scancode_pressed(Scancode::LShift) {
-        camera.translate(glam::Vec3::unit_y() * 2.0 * dt);
+        camera.translate(glam::Vec3::unit_y() * Camera::SPEED * dt);
     }
     if kb.is_scancode_pressed(Scancode::LCtrl) {
-        camera.translate(-glam::Vec3::unit_y() * 2.0 * dt);
+        camera.translate(-glam::Vec3::unit_y() * Camera::SPEED * dt);
     }
 
     // Rotation
