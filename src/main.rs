@@ -1,5 +1,6 @@
 mod camera;
 mod mesh;
+mod viewport;
 
 use crate::camera::Camera;
 use crate::mesh::Mesh;
@@ -15,8 +16,9 @@ use sdl2::render::{Canvas, RenderTarget};
 use sdl2::video::SwapInterval;
 use sdl2::rect::Rect;
 use sdl2::pixels::{self, Color, PixelFormat, PixelFormatEnum};
+use crate::viewport::Viewport;
 
-const SCREEN_SIZE: (u32, u32) = (1280, 720);
+const SCREEN_SIZE: (u32, u32) = (480, 480);
 const CLEAR_COLOR: pixels::Color = pixels::Color::RGB(0, 64, 148);
 
 fn main() -> Result<(), String> {
@@ -30,7 +32,9 @@ fn main() -> Result<(), String> {
             vec3(0.5, 0.5, -0.5),
             vec3(0.5, 0.5, 0.5),
             vec3(-0.5, 0.5, 0.5)
-        ], vec![]);
+        ], vec![3, 6, 2, 3, 7, 6]);
+
+    let viewport = Viewport::new(SCREEN_SIZE.0 as u16, SCREEN_SIZE.1 as u16);
 
     let font = cairo::FontFace::toy_create(
         "Menlo",
@@ -79,7 +83,7 @@ fn main() -> Result<(), String> {
     let mut time = start.clone();
     let mut fps_str = String::with_capacity(16);
 
-    let mut camera = Camera::new(vec3i(0, 0, 8), vec3i(0, 0, 0));
+    let mut camera = Camera::new(vec3i(0, 5, 8), vec3i(0, 0, 0));
 
     'main: loop {
         // Poll event loop
@@ -116,7 +120,7 @@ fn main() -> Result<(), String> {
 
         // Compute transformation matrix
         let m = glam::Mat4::from_scale_rotation_translation(
-            glam::Vec3::one() * 4.0,
+            glam::Vec3::one() * 2.0,
             glam::Quat::from_rotation_ypr(rot, 0.0, 0.0),
             glam::Vec3::new(0., 0., 0.)
         );
@@ -152,7 +156,7 @@ fn main() -> Result<(), String> {
         cairo.stroke();
 
         // Draw cube
-        mesh.draw(&pvm, &cairo, SCREEN_SIZE);
+        mesh.draw(&pvm, &cairo, &viewport);
 
         // TODO: (Perf) Possible to directly copy Cairo buffer to frame buffer, bypassing texture?
         // Copy cairo buffer to SDL texture
