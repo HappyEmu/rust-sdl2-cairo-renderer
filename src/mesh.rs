@@ -2,20 +2,34 @@ use crate::viewport::Viewport;
 
 pub struct Mesh {
     vertices: Vec<glam::Vec3>,
+    colors: Vec<glam::Vec3>,
     indices: Vec<u32>,
     transform: glam::Mat4
 }
 
 impl Mesh {
     pub fn new(vertices: Vec<glam::Vec3>, indices: Vec<u32>) -> Self {
-        Mesh { vertices, indices, transform: glam::Mat4::identity() }
+        let colors = vertices.iter().map(|_|
+            glam::Vec3::new(rand::random::<f32>(), rand::random::<f32>(), rand::random::<f32>())
+        ).collect();
+
+        Mesh {
+            vertices,
+            indices,
+            colors,
+            transform: glam::Mat4::identity()
+        }
     }
 
     pub fn draw(&self, mvp: &glam::Mat4, cairo: &cairo::Context, vp: &Viewport) {
+        let t = vp.mat * *mvp;
+
         // Draw vertices
+        cairo.set_source_rgb(1.0, 0.7, 0.0);
+
         for vertex in (&self.vertices).iter() {
-            // Transform to NDC (with perspective division)
-            let ndc = vp.mat * *mvp * glam::Vec4::new(vertex.x, vertex.y, vertex.z, 1.0);
+            // Transform vertices, perform perspective division
+            let ndc = t * glam::Vec4::new(vertex.x, vertex.y, vertex.z, 1.0);
             let ndc = ndc / ndc.w;
 
             // Cull vertices behind camera plane
@@ -50,9 +64,7 @@ impl Mesh {
         // [ aa ab ay ]   [ x0 y0 w0 ][-1]
         // [ ba bb by ] = [ x1 y1 w1 ]
         // [ ca cb cy ]   [ x2 y2 w2 ]
-        for triangle_indices in self.indices.windows(3usize) {
-            let t = vp.mat * *mvp;
-
+        for triangle_indices in self.indices.chunks(3usize) {
             let v0 = t * self.vertices[triangle_indices[0] as usize].extend(1.0);
             let v1 = t * self.vertices[triangle_indices[1] as usize].extend(1.0);
             let v2 = t * self.vertices[triangle_indices[2] as usize].extend(1.0);
@@ -75,8 +87,12 @@ impl Mesh {
             let (ab, bb, cb) = (coeffs.y_axis.x, coeffs.y_axis.y, coeffs.y_axis.z);
             let (ay, by, cy) = (coeffs.z_axis.x, coeffs.z_axis.y, coeffs.z_axis.z);
 
+            let color = self.colors[triangle_indices[0] as usize];
+            cairo.set_source_rgb(color.x as f64, color.y as f64, color.z as f64);
+
             // Check whole screen
             // TODO: Implement AABB optimization (only test pixels within AABB of triangle)
+            // TODO: Parallelize, store result, write at the end
             for y in 0..vp.dim.1 {
                 for x in 0..vp.dim.0 {
                     let (x, y) = (x as f32, y as f32);
@@ -88,10 +104,10 @@ impl Mesh {
                     if aw > 0.0 && bw > 0.0 && cw > 0.0 {
                         // Point is inside triangle, draw
                         cairo.rectangle(x as f64, y as f64, 1.5, 1.5);
-                        cairo.fill();
                     }
                 }
             }
+            cairo.fill();
         }
     }
 }

@@ -18,7 +18,7 @@ use sdl2::rect::Rect;
 use sdl2::pixels::{self, Color, PixelFormat, PixelFormatEnum};
 use crate::viewport::Viewport;
 
-const SCREEN_SIZE: (u32, u32) = (480, 480);
+const SCREEN_SIZE: (u32, u32) = (1280, 720);
 const CLEAR_COLOR: pixels::Color = pixels::Color::RGB(0, 64, 148);
 
 fn main() -> Result<(), String> {
@@ -32,7 +32,14 @@ fn main() -> Result<(), String> {
             vec3(0.5, 0.5, -0.5),
             vec3(0.5, 0.5, 0.5),
             vec3(-0.5, 0.5, 0.5)
-        ], vec![3, 6, 2, 3, 7, 6]);
+        ], vec![
+            3, 7, 6, 6, 2, 3,
+            2, 6, 5, 5, 1, 2,
+            1, 5, 4, 4, 0, 1,
+            0, 4, 7, 7, 3, 0,
+            7, 4, 5, 5, 6, 7,
+            0, 3, 2, 2, 1, 0
+        ]);
 
     let viewport = Viewport::new(SCREEN_SIZE.0 as u16, SCREEN_SIZE.1 as u16);
 
@@ -138,6 +145,9 @@ fn main() -> Result<(), String> {
         cairo.set_source_rgb(0.0, 0.3, 0.6);
         cairo.paint();
 
+        // Draw cube
+        mesh.draw(&pvm, &cairo, &viewport);
+
         // Draw mouse "pointer"
         {
             let lw = cairo.get_line_width();
@@ -154,9 +164,6 @@ fn main() -> Result<(), String> {
         cairo.move_to(10.0, 30.0);
         cairo.show_text(&fps_str);
         cairo.stroke();
-
-        // Draw cube
-        mesh.draw(&pvm, &cairo, &viewport);
 
         // TODO: (Perf) Possible to directly copy Cairo buffer to frame buffer, bypassing texture?
         // Copy cairo buffer to SDL texture
