@@ -12,3 +12,6 @@ Steps:
 - [ ]  Shader programs
 - [ ]  Port to `no-std`
 - [ ]  Remove SDL2, Cairo, draw to frame buffer directly
+
+### Current state
+![Renderer State](https://drive.google.com/uc?id=1IYrtD8lfHR6xknQrJGbthWuuXUNjnPZk)
