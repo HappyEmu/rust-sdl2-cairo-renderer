@@ -122,6 +122,7 @@ fn main() -> Result<(), String> {
     let canvas = Arc::new(RwLock::new(MyCanvas(canvas)));
 
     'main: loop {
+        let frame_start = std::time::Instant::now();
         // Poll event loop
         for event in events.poll_iter() {
             match event {
@@ -151,7 +152,7 @@ fn main() -> Result<(), String> {
         // Camera control
         update_camera(&mut camera, &kb, dt);
 
-        let rot = 1.0 * elapsed;
+        let rot = 1.0;// * elapsed;
         // Compute transformation matrix
         let m = glam::Mat4::from_scale_rotation_translation(
             glam::Vec3::one() * 2.0,
@@ -202,14 +203,19 @@ fn main() -> Result<(), String> {
 
         // Draw cube
         let draw_canvas = Arc::clone(&canvas);
+        let t1 = std::time::Instant::now();
         Mesh::draw(&mesh, &pvm, draw_canvas, &viewport);
+        println!("Drawing took {}us", t1.elapsed().as_micros());
+
+        let frame_duration = frame_start.elapsed().as_millis() as u64;
+        println!("Frame duration: {}ms", frame_duration);
 
         let mut canvas = &mut canvas.write().unwrap();
         canvas.present();
         clear_canvas(&mut canvas, CLEAR_COLOR);
 
         // Since we are polling the event cube, yield some time to free up CPU
-        std::thread::sleep(Duration::from_millis(4));
+        // std::thread::sleep(Duration::from_millis(if frame_duration >= 10 { 1 } else { 10 - frame_duration }));
     }
 
     Ok(())

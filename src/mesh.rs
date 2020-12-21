@@ -34,24 +34,23 @@ impl Mesh {
     pub fn draw(&self, mvp: &glam::Mat4, canvas: Arc<RwLock<MyCanvas>>, vp: &Viewport) {
         let t = vp.mat * *mvp;
 
-        let that = MeshPtr { ptr: self as * const Mesh };
+        let mesh = MeshPtr { ptr: self as * const Mesh };
 
         let mut handles = vec![];
-        for triangle_indices in unsafe { &*that.ptr.clone() }.indices.chunks(3).into_iter() {
-            let canvas = Arc::clone(&canvas);
+        for triangle_indices in unsafe { &*mesh.ptr }.indices.chunks(3).into_iter() {
+            let canvas_lock = Arc::clone(&canvas);
             let vp = vp.clone();
 
-            //let that = that.clone();
             let handle = std::thread::spawn(move || {
-                let v0 = t * (unsafe { (&*that.ptr) }.vertices[triangle_indices[0] as usize].extend(1.0));
-                let v1 = t * (unsafe { (&*that.ptr) }.vertices[triangle_indices[1] as usize].extend(1.0));
-                let v2 = t * (unsafe { (&*that.ptr) }.vertices[triangle_indices[2] as usize].extend(1.0));
+                let v0 = t * (unsafe { (&*mesh.ptr) }.vertices[triangle_indices[0] as usize].extend(1.0));
+                let v1 = t * (unsafe { (&*mesh.ptr) }.vertices[triangle_indices[1] as usize].extend(1.0));
+                let v2 = t * (unsafe { (&*mesh.ptr) }.vertices[triangle_indices[2] as usize].extend(1.0));
 
                 if let Some(points) = Self::rasterize_triangle(v0, v1, v2, &vp) {
-                    let c = unsafe { (&*that.ptr) }.colors[triangle_indices[0] as usize];
+                    let c = unsafe { (&*mesh.ptr) }.colors[triangle_indices[0] as usize];
 
                     // Acquire write lock
-                    let canvas = &mut canvas.write().unwrap();
+                    let canvas = &mut canvas_lock.write().unwrap();
 
                     canvas.set_draw_color(sdl2::pixels::Color::RGB(
                         (c.x * 255.0) as u8,
