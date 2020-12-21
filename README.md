@@ -1,4 +1,4 @@
-# High Performance Software Renderer with SDL2, GTK Cairo and Rust
+# Software Renderer with SDL2,Cairo and Rust
 
 The goal of this little project is to implement a software renderer capable of drawing 3D
 meshes in a very constrained environment (STM32, ESP32).
