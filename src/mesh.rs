@@ -1,4 +1,14 @@
 use crate::viewport::Viewport;
+use std::sync::{Arc, RwLock};
+use crate::MyCanvas;
+
+#[derive(Copy, Clone)]
+struct MeshPtr {
+    pub ptr: *const Mesh
+}
+
+unsafe impl Send for MeshPtr {}
+unsafe impl Sync for MeshPtr {}
 
 pub struct Mesh {
     vertices: Vec<glam::Vec3>,
@@ -21,24 +31,41 @@ impl Mesh {
         }
     }
 
-    pub fn draw(&self, mvp: &glam::Mat4, canvas: &mut sdl2::render::WindowCanvas, vp: &Viewport) {
+    pub fn draw(&self, mvp: &glam::Mat4, canvas: Arc<RwLock<MyCanvas>>, vp: &Viewport) {
         let t = vp.mat * *mvp;
 
-        for triangle_indices in self.indices.chunks(3) {
-            let v0 = t * self.vertices[triangle_indices[0] as usize].extend(1.0);
-            let v1 = t * self.vertices[triangle_indices[1] as usize].extend(1.0);
-            let v2 = t * self.vertices[triangle_indices[2] as usize].extend(1.0);
+        let that = MeshPtr { ptr: self as * const Mesh };
 
-            let c = self.colors[triangle_indices[0] as usize];
-            canvas.set_draw_color(sdl2::pixels::Color::RGB(
-                (c.x * 255.0) as u8,
-                (c.y * 255.0) as u8,
-                (c.z * 255.0) as u8)
-            );
+        let mut handles = vec![];
+        for triangle_indices in unsafe { &*that.ptr.clone() }.indices.chunks(3).into_iter() {
+            let canvas = Arc::clone(&canvas);
+            let vp = vp.clone();
 
-            if let Some(points) = Self::rasterize_triangle(v0, v1, v2, vp) {
-                canvas.draw_points(points.as_slice());
-            }
+            //let that = that.clone();
+            let handle = std::thread::spawn(move || {
+                let v0 = t * (unsafe { (&*that.ptr) }.vertices[triangle_indices[0] as usize].extend(1.0));
+                let v1 = t * (unsafe { (&*that.ptr) }.vertices[triangle_indices[1] as usize].extend(1.0));
+                let v2 = t * (unsafe { (&*that.ptr) }.vertices[triangle_indices[2] as usize].extend(1.0));
+
+                if let Some(points) = Self::rasterize_triangle(v0, v1, v2, &vp) {
+                    let c = unsafe { (&*that.ptr) }.colors[triangle_indices[0] as usize];
+
+                    // Acquire write lock
+                    let canvas = &mut canvas.write().unwrap();
+
+                    canvas.set_draw_color(sdl2::pixels::Color::RGB(
+                        (c.x * 255.0) as u8,
+                        (c.y * 255.0) as u8,
+                        (c.z * 255.0) as u8)
+                    );
+                    canvas.draw_points(points.as_slice());
+                }
+            });
+            handles.push(handle);
+        }
+
+        for thread in handles {
+            thread.join().unwrap();
         }
     }
 

@@ -17,9 +17,30 @@ use sdl2::video::SwapInterval;
 use sdl2::rect::Rect;
 use sdl2::pixels::{self, Color, PixelFormat, PixelFormatEnum};
 use crate::viewport::Viewport;
+use std::sync::{Arc, RwLock};
+use std::ops::{Deref, DerefMut};
 
 const SCREEN_SIZE: (u32, u32) = (1280, 720);
 const CLEAR_COLOR: pixels::Color = pixels::Color::RGB(0, 64, 148);
+
+struct MyCanvas(sdl2::render::WindowCanvas);
+
+unsafe impl Send for MyCanvas {}
+unsafe impl Sync for MyCanvas {}
+
+impl Deref for MyCanvas {
+    type Target = sdl2::render::WindowCanvas;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for MyCanvas {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 fn main() -> Result<(), String> {
     let mesh = Mesh::new(
@@ -98,6 +119,8 @@ fn main() -> Result<(), String> {
         vec3i(0, 0, 0)
     );
 
+    let canvas = Arc::new(RwLock::new(MyCanvas(canvas)));
+
     'main: loop {
         // Poll event loop
         for event in events.poll_iter() {
@@ -175,11 +198,13 @@ fn main() -> Result<(), String> {
         })?;
 
         // Copy SDL texture to frame buffer
-        canvas.copy(&texture, None, None).unwrap();
+        (&mut canvas.write().unwrap()).copy(&texture, None, None).unwrap();
 
         // Draw cube
-        mesh.draw(&pvm, &mut canvas, &viewport);
+        let draw_canvas = Arc::clone(&canvas);
+        Mesh::draw(&mesh, &pvm, draw_canvas, &viewport);
 
+        let mut canvas = &mut canvas.write().unwrap();
         canvas.present();
         clear_canvas(&mut canvas, CLEAR_COLOR);
 
