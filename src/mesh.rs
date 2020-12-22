@@ -1,14 +1,7 @@
 use crate::viewport::Viewport;
 use std::sync::{Arc, RwLock};
 use crate::MyCanvas;
-
-#[derive(Copy, Clone)]
-struct MeshPtr {
-    pub ptr: *const Mesh
-}
-
-unsafe impl Send for MeshPtr {}
-unsafe impl Sync for MeshPtr {}
+use std::cell::UnsafeCell;
 
 pub struct Mesh {
     vertices: Vec<glam::Vec3>,
@@ -31,26 +24,32 @@ impl Mesh {
         }
     }
 
-    pub fn draw(&self, mvp: &glam::Mat4, canvas: Arc<RwLock<MyCanvas>>, vp: &Viewport) {
+    pub fn draw(&self, mvp: &glam::Mat4, canvas: &RwLock<MyCanvas>, vp: &Viewport, pool: &threadpool::ThreadPool) {
         let t = vp.mat * *mvp;
 
-        let mesh = MeshPtr { ptr: self as * const Mesh };
+        // Canvas is not Arc'ed because we know it will live longer than this method,
+        // since we join the spawned threads at the end of the method. 'static because
+        // otherwise the compiler would nag about sharing across threads.
+        //let canvas: &'static RwLock<MyCanvas> = unsafe { std::mem::transmute(canvas) };
+        let canvas = canvas as *const RwLock<MyCanvas> as usize;
 
-        let mut handles = vec![];
-        for triangle_indices in unsafe { &*mesh.ptr }.indices.chunks(3).into_iter() {
-            let canvas_lock = Arc::clone(&canvas);
+        // self is immutable during this method (otherwise, we would take a &mut to self)
+        // Cast to usize to make it Send able to multiple threads. (Could wrap in custom Send+Sync type)
+        let mesh = self as *const Mesh as usize;
+
+        for triangle_indices in unsafe { &*(mesh as *const Mesh)}.indices.chunks(3).into_iter() {
             let vp = vp.clone();
 
-            let handle = std::thread::spawn(move || {
-                let v0 = t * (unsafe { (&*mesh.ptr) }.vertices[triangle_indices[0] as usize].extend(1.0));
-                let v1 = t * (unsafe { (&*mesh.ptr) }.vertices[triangle_indices[1] as usize].extend(1.0));
-                let v2 = t * (unsafe { (&*mesh.ptr) }.vertices[triangle_indices[2] as usize].extend(1.0));
+            pool.execute(move || {
+                let v0 = t * (unsafe { &*(mesh as *const Mesh) }.vertices[triangle_indices[0] as usize].extend(1.0));
+                let v1 = t * (unsafe { &*(mesh as *const Mesh) }.vertices[triangle_indices[1] as usize].extend(1.0));
+                let v2 = t * (unsafe { &*(mesh as *const Mesh) }.vertices[triangle_indices[2] as usize].extend(1.0));
 
                 if let Some(points) = Self::rasterize_triangle(v0, v1, v2, &vp) {
-                    let c = unsafe { (&*mesh.ptr) }.colors[triangle_indices[0] as usize];
+                    let c = unsafe { &*(mesh as *const Mesh) }.colors[triangle_indices[0] as usize];
 
                     // Acquire write lock
-                    let canvas = &mut canvas_lock.write().unwrap();
+                    let canvas = &mut unsafe { &*(canvas as *const RwLock<MyCanvas>) }.write().unwrap();
 
                     canvas.set_draw_color(sdl2::pixels::Color::RGB(
                         (c.x * 255.0) as u8,
@@ -60,12 +59,9 @@ impl Mesh {
                     canvas.draw_points(points.as_slice());
                 }
             });
-            handles.push(handle);
         }
 
-        for thread in handles {
-            thread.join().unwrap();
-        }
+        pool.join();
     }
 
     fn rasterize_triangle(

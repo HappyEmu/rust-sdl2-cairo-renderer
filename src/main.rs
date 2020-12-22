@@ -43,6 +43,8 @@ impl DerefMut for MyCanvas {
 }
 
 fn main() -> Result<(), String> {
+    let pool = threadpool::ThreadPool::new(4);
+
     let mesh = Mesh::new(
         vec![
             vec3(-0.5, -0.5, -0.5),
@@ -119,7 +121,7 @@ fn main() -> Result<(), String> {
         vec3i(0, 0, 0)
     );
 
-    let canvas = Arc::new(RwLock::new(MyCanvas(canvas)));
+    let canvas = RwLock::new(MyCanvas(canvas));
 
     'main: loop {
         let frame_start = std::time::Instant::now();
@@ -202,9 +204,8 @@ fn main() -> Result<(), String> {
         (&mut canvas.write().unwrap()).copy(&texture, None, None).unwrap();
 
         // Draw cube
-        let draw_canvas = Arc::clone(&canvas);
         let t1 = std::time::Instant::now();
-        Mesh::draw(&mesh, &pvm, draw_canvas, &viewport);
+        Mesh::draw(&mesh, &pvm, &canvas, &viewport, &pool);
         println!("Drawing took {}us", t1.elapsed().as_micros());
 
         let frame_duration = frame_start.elapsed().as_millis() as u64;
