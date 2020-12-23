@@ -1,6 +1,4 @@
-use glam::Vec3;
 use std::f32::consts;
-use crate::mat4_look_at;
 
 #[derive(Default)]
 pub struct Camera {

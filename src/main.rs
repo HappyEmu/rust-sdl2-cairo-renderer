@@ -1,27 +1,31 @@
 mod camera;
 mod mesh;
 mod viewport;
+mod canvas;
 
 use crate::camera::Camera;
 use crate::mesh::Mesh;
+use crate::viewport::Viewport;
+use crate::canvas::SendCanvas;
 
 use std::fmt::Write;
-use std::time::Duration;
 use std::f64::consts::PI;
+use std::sync::RwLock;
 
 use sdl2::event::{Event, EventType};
-use sdl2::keyboard::{Keycode, Scancode, KeyboardState};
-use sdl2::gfx::primitives::DrawRenderer;
+use sdl2::keyboard::{Scancode, KeyboardState};
 use sdl2::render::{Canvas, RenderTarget};
-use sdl2::video::SwapInterval;
-use sdl2::rect::Rect;
-use sdl2::pixels::{self, Color, PixelFormat, PixelFormatEnum};
-use crate::viewport::Viewport;
+use sdl2::pixels::{self, PixelFormatEnum};
 
 const SCREEN_SIZE: (u32, u32) = (1280, 720);
 const CLEAR_COLOR: pixels::Color = pixels::Color::RGB(0, 64, 148);
 
 fn main() -> Result<(), String> {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .unwrap();
+
     let mesh = Mesh::new(
         vec![
             vec3(-0.5, -0.5, -0.5),
@@ -52,7 +56,7 @@ fn main() -> Result<(), String> {
         cairo::FontWeight::Normal
     );
 
-    let mut surface = cairo::ImageSurface::create(
+    let surface = cairo::ImageSurface::create(
         cairo::Format::ARgb32,
         SCREEN_SIZE.0 as i32,
         SCREEN_SIZE.1 as i32
@@ -71,7 +75,7 @@ fn main() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut canvas = window.into_canvas()
+    let canvas = window.into_canvas()
         .present_vsync()
         .build()
         .map_err(|e| e.to_string())?;
@@ -89,7 +93,7 @@ fn main() -> Result<(), String> {
         .create_texture_streaming(PixelFormatEnum::ARGB8888, SCREEN_SIZE.0, SCREEN_SIZE.1)
         .unwrap();
 
-    let mut start = std::time::Instant::now();
+    let start = std::time::Instant::now();
     let mut time = start.clone();
     let mut fps_str = String::with_capacity(16);
 
@@ -98,7 +102,10 @@ fn main() -> Result<(), String> {
         vec3i(0, 0, 0)
     );
 
+    let canvas = RwLock::new(SendCanvas(canvas));
+
     'main: loop {
+        let frame_start = std::time::Instant::now();
         // Poll event loop
         for event in events.poll_iter() {
             match event {
@@ -128,7 +135,7 @@ fn main() -> Result<(), String> {
         // Camera control
         update_camera(&mut camera, &kb, dt);
 
-        let rot = 1.0 * elapsed;
+        let rot = 1.0;// * elapsed;
         // Compute transformation matrix
         let m = glam::Mat4::from_scale_rotation_translation(
             glam::Vec3::one() * 2.0,
@@ -175,16 +182,22 @@ fn main() -> Result<(), String> {
         })?;
 
         // Copy SDL texture to frame buffer
-        canvas.copy(&texture, None, None).unwrap();
+        (&mut canvas.write().unwrap()).copy(&texture, None, None).unwrap();
 
         // Draw cube
-        mesh.draw(&pvm, &mut canvas, &viewport);
+        let t1 = std::time::Instant::now();
+        Mesh::draw(&mesh, &pvm, &canvas, &viewport, &pool);
+        println!("Drawing took {}us", t1.elapsed().as_micros());
 
+        let frame_duration = frame_start.elapsed().as_millis() as u64;
+        println!("Frame duration: {}ms", frame_duration);
+
+        let mut canvas = &mut canvas.write().unwrap();
         canvas.present();
         clear_canvas(&mut canvas, CLEAR_COLOR);
 
         // Since we are polling the event cube, yield some time to free up CPU
-        std::thread::sleep(Duration::from_millis(4));
+        // std::thread::sleep(Duration::from_millis(if frame_duration >= 10 { 1 } else { 10 - frame_duration }));
     }
 
     Ok(())
@@ -227,6 +240,8 @@ fn update_camera(camera: &mut Camera, kb: &KeyboardState, dt: f32) {
     }
 }
 
+// Some helper functions
+
 fn mat4_look_at(eye: glam::Vec3, center: glam::Vec3, up: glam::Vec3) -> glam::Mat4 {
     let z = (eye - center).normalize();
     let x = up.cross(z).normalize();
@@ -240,10 +255,12 @@ fn mat4_look_at(eye: glam::Vec3, center: glam::Vec3, up: glam::Vec3) -> glam::Ma
     )
 }
 
+#[inline]
 fn vec3<T: Into<f32>>(x: T, y: T, z: T) -> glam::Vec3 {
     glam::Vec3::new(x.into(), y.into(), z.into())
 }
 
+#[inline]
 fn vec3i(x: i32, y: i32, z: i32) -> glam::Vec3 {
     glam::Vec3::new(x as f32, y as f32, z as f32)
 }

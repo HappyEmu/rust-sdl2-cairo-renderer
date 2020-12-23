@@ -1,4 +1,6 @@
 use crate::viewport::Viewport;
+use crate::canvas::SendCanvas;
+use std::sync::RwLock;
 
 pub struct Mesh {
     vertices: Vec<glam::Vec3>,
@@ -21,24 +23,31 @@ impl Mesh {
         }
     }
 
-    pub fn draw(&self, mvp: &glam::Mat4, canvas: &mut sdl2::render::WindowCanvas, vp: &Viewport) {
+    pub fn draw(&self, mvp: &glam::Mat4, canvas: &RwLock<SendCanvas>, vp: &Viewport, pool: &rayon::ThreadPool) {
         let t = vp.mat * *mvp;
 
-        for triangle_indices in self.indices.chunks(3) {
-            let v0 = t * self.vertices[triangle_indices[0] as usize].extend(1.0);
-            let v1 = t * self.vertices[triangle_indices[1] as usize].extend(1.0);
-            let v2 = t * self.vertices[triangle_indices[2] as usize].extend(1.0);
+        for triangle_indices in self.indices.chunks(3).into_iter() {
+            pool.scope(|s| {
+                s.spawn(move |_| {
+                    let v0 = t * self.vertices[triangle_indices[0] as usize].extend(1.0);
+                    let v1 = t * self.vertices[triangle_indices[1] as usize].extend(1.0);
+                    let v2 = t * self.vertices[triangle_indices[2] as usize].extend(1.0);
 
-            let c = self.colors[triangle_indices[0] as usize];
-            canvas.set_draw_color(sdl2::pixels::Color::RGB(
-                (c.x * 255.0) as u8,
-                (c.y * 255.0) as u8,
-                (c.z * 255.0) as u8)
-            );
+                    if let Some(points) = Self::rasterize_triangle(v0, v1, v2, &vp) {
+                        let c = self.colors[triangle_indices[0] as usize];
 
-            if let Some(points) = Self::rasterize_triangle(v0, v1, v2, vp) {
-                canvas.draw_points(points.as_slice());
-            }
+                        // Acquire write lock
+                        let canvas = &mut canvas.write().unwrap();
+
+                        canvas.set_draw_color(sdl2::pixels::Color::RGB(
+                            (c.x * 255.0) as u8,
+                            (c.y * 255.0) as u8,
+                            (c.z * 255.0) as u8)
+                        );
+                        canvas.draw_points(points.as_slice());
+                    }
+                });
+            });
         }
     }
 

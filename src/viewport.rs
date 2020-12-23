@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct Viewport {
     pub dim: (u16, u16),
     pub mat: glam::Mat4
