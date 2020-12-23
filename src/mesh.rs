@@ -1,7 +1,6 @@
 use crate::viewport::Viewport;
-use std::sync::{Arc, RwLock};
-use crate::MyCanvas;
-use std::cell::UnsafeCell;
+use crate::canvas::SendCanvas;
+use std::sync::RwLock;
 
 pub struct Mesh {
     vertices: Vec<glam::Vec3>,
@@ -24,44 +23,32 @@ impl Mesh {
         }
     }
 
-    pub fn draw(&self, mvp: &glam::Mat4, canvas: &RwLock<MyCanvas>, vp: &Viewport, pool: &threadpool::ThreadPool) {
+    pub fn draw(&self, mvp: &glam::Mat4, canvas: &RwLock<SendCanvas>, vp: &Viewport, pool: &rayon::ThreadPool) {
         let t = vp.mat * *mvp;
 
-        // Canvas is not Arc'ed because we know it will live longer than this method,
-        // since we join the spawned threads at the end of the method. 'static because
-        // otherwise the compiler would nag about sharing across threads.
-        //let canvas: &'static RwLock<MyCanvas> = unsafe { std::mem::transmute(canvas) };
-        let canvas = canvas as *const RwLock<MyCanvas> as usize;
+        for triangle_indices in self.indices.chunks(3).into_iter() {
+            pool.scope(|s| {
+                s.spawn(move |_| {
+                    let v0 = t * self.vertices[triangle_indices[0] as usize].extend(1.0);
+                    let v1 = t * self.vertices[triangle_indices[1] as usize].extend(1.0);
+                    let v2 = t * self.vertices[triangle_indices[2] as usize].extend(1.0);
 
-        // self is immutable during this method (otherwise, we would take a &mut to self)
-        // Cast to usize to make it Send able to multiple threads. (Could wrap in custom Send+Sync type)
-        let mesh = self as *const Mesh as usize;
+                    if let Some(points) = Self::rasterize_triangle(v0, v1, v2, &vp) {
+                        let c = self.colors[triangle_indices[0] as usize];
 
-        for triangle_indices in unsafe { &*(mesh as *const Mesh)}.indices.chunks(3).into_iter() {
-            let vp = vp.clone();
+                        // Acquire write lock
+                        let canvas = &mut canvas.write().unwrap();
 
-            pool.execute(move || {
-                let v0 = t * (unsafe { &*(mesh as *const Mesh) }.vertices[triangle_indices[0] as usize].extend(1.0));
-                let v1 = t * (unsafe { &*(mesh as *const Mesh) }.vertices[triangle_indices[1] as usize].extend(1.0));
-                let v2 = t * (unsafe { &*(mesh as *const Mesh) }.vertices[triangle_indices[2] as usize].extend(1.0));
-
-                if let Some(points) = Self::rasterize_triangle(v0, v1, v2, &vp) {
-                    let c = unsafe { &*(mesh as *const Mesh) }.colors[triangle_indices[0] as usize];
-
-                    // Acquire write lock
-                    let canvas = &mut unsafe { &*(canvas as *const RwLock<MyCanvas>) }.write().unwrap();
-
-                    canvas.set_draw_color(sdl2::pixels::Color::RGB(
-                        (c.x * 255.0) as u8,
-                        (c.y * 255.0) as u8,
-                        (c.z * 255.0) as u8)
-                    );
-                    canvas.draw_points(points.as_slice());
-                }
+                        canvas.set_draw_color(sdl2::pixels::Color::RGB(
+                            (c.x * 255.0) as u8,
+                            (c.y * 255.0) as u8,
+                            (c.z * 255.0) as u8)
+                        );
+                        canvas.draw_points(points.as_slice());
+                    }
+                });
             });
         }
-
-        pool.join();
     }
 
     fn rasterize_triangle(

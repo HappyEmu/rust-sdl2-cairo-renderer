@@ -12,8 +12,8 @@ opt-level = 1
 debug = true
 
 [dependencies]
-sdl2 = { verssion = "0.34.3" , features = ["gfx", "ttf"] }
+sdl2 = { version = "0.34.3" , features = ["gfx", "ttf"] }
 cairo-rs = "0.9.1"
 glam = { version = "0.11.2"}
 rand = "0.8.0"
-threadpool = "1.8.1"
+rayon = "1.5.0"
